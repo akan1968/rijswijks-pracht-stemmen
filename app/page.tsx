@@ -75,10 +75,10 @@ export default function Home() {
   async function submit() {
     setStatus({ type: "idle" });
 
-    if (selectedIds.length !== 3) {
-      setStatus({ type: "error", msg: "Kies precies 3 locaties." });
-      return;
-    }
+   if (selectedIds.length < 1 || selectedIds.length > 3) {
+  setStatus({ type: "error", msg: "Kies 1, 2 of 3 locaties." });
+  return;
+}
 
     const selections = selectedIds.map(id => ({
       locationId: id,
@@ -87,15 +87,17 @@ export default function Home() {
     }));
 
     if (selections.some(s => !s.points)) {
-      setStatus({ type: "error", msg: "Ken 1, 2 en 3 punten toe (elk precies één keer)." });
-      return;
-    }
+  setStatus({ type: "error", msg: "Ken punten toe aan je gekozen locaties." });
+  return;
+}
 
-    const pts = selections.map(s => s.points).sort().join(",");
-    if (pts !== "1,2,3") {
-      setStatus({ type: "error", msg: "Je moet 1, 2 en 3 punten elk precies één keer gebruiken." });
-      return;
-    }
+const pts = selections.map(s => s.points).sort((a, b) => (a! - b!)).join(",");
+const expected = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "2,3" : "1,2,3";
+
+if (pts !== expected) {
+  setStatus({ type: "error", msg: `Gebruik de punten ${expected.replace(",", " en ").replace("2,3", "3 en 2")} (elk maar 1×).` });
+  return;
+}
 
     setStatus({ type: "loading", msg: "Versturen..." });
 
