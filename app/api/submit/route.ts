@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     comment: (s.comment ?? "").trim() || null,
   }));
 
-  const { error: voteErr } = await supabase.from("votes").insert(rows);
+  const { error: voteErr } = await supabase.from("stemmen").insert(rows);
 
   if (voteErr) {
     return NextResponse.json({ ok: false, error: voteErr.message }, { status: 400 });
@@ -60,4 +60,5 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, submissionId: sub.id });
 }
+
 
