@@ -7,7 +7,7 @@ export async function GET() {
   const supabase = createClient(url, serviceKey);
 
   const { data, error } = await supabase
-    .from("locations")
+    .from("locaties")
     .select("id,name,weight_factor")
     .order("id");
 
@@ -17,3 +17,4 @@ export async function GET() {
 
   return NextResponse.json({ ok: true, locations: data ?? [] });
 }
+
