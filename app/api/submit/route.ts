@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   if (pts !== "1,2,3") return badRequest("Verdeel de punten 1,2,3 elk precies één keer.");
 
   const { data: sub, error: subErr } = await supabase
-    .from("submissions")
+    .from(".from("inzendingen")")
     .insert({})
     .select("id")
     .single();
@@ -60,3 +60,4 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, submissionId: sub.id });
 }
+
