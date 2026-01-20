@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("locaties")
-    .select("id,name,weight_factor")
+    .select("id, naam_locatie, naam_artiest, wegingsfactor")
     .order("id");
 
   if (error) {
@@ -17,4 +17,5 @@ export async function GET() {
 
   return NextResponse.json({ ok: true, locations: data ?? [] });
 }
+
 
