@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Location = { id: number; name: string; weight_factor: number };
+type Location = {
+  id: number;
+  "naam locatie": string;
+  "naam artiest": string;
+  wegingsfactor: number;
+};
+
+function label(l: Location) {
+  return `${l["naam locatie"]} — ${l["naam artiest"]}`;
+}
 
 type Choice = {
   locationId: number;
@@ -126,7 +135,7 @@ export default function Home() {
               return (
                 <label key={l.id} style={{ display: "flex", gap: 10, opacity: disabled ? 0.6 : 1 }}>
                   <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleSelect(l.id)} />
-                  <span>{l.name}</span>
+                  <span>{label(l)}</span>
                 </label>
               );
             })}
@@ -135,7 +144,16 @@ export default function Home() {
 
         <p style={{ color: "#555", marginBottom: 0 }}>Gekozen: {selectedIds.length}/3</p>
       </section>
-
+        {selectedIds.length > 0 && (
+  <div style={{ marginTop: 8 }}>
+    <b>Jouw keuze:</b>
+    <ol style={{ marginTop: 6 }}>
+      {selectedLocations.map(l => (
+        <li key={l.id}>{label(l)}</li>
+      ))}
+    </ol>
+  </div>
+)}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe + toelichting</h2>
 
@@ -149,7 +167,7 @@ export default function Home() {
 
               return (
                 <div key={l.id} style={{ padding: 12, border: "1px solid #eee", borderRadius: 10, marginBottom: 10 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{l.name}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{label(l)}</div>
 
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
                     <span>Punten:</span>
