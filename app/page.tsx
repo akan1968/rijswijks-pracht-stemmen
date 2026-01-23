@@ -34,7 +34,7 @@ export default function Home() {
     type: "idle",
   });
 
-  // 1) data laden
+  // locaties laden
   useEffect(() => {
     (async () => {
       const res = await fetch("/api/locations", { cache: "no-store" });
@@ -52,42 +52,33 @@ export default function Home() {
 
   const allowedPoints = useMemo(() => allowedPointsForCount(selectedIds.length), [selectedIds.length]);
 
-  const usedPoints = useMemo(() => {
-    const pts = new Set<number>();
-    for (const id of selectedIds) {
-      const p = choices[id]?.points;
-      if (p) pts.add(p);
-    }
-    return pts;
-  }, [choices, selectedIds]);
-
-  // 2) choices bijhouden + opschonen + resetten van niet-toegestane punten
+  // choices bijhouden + opschonen + resetten van niet-toegestane punten
   useEffect(() => {
     setChoices((prev) => {
       const next: Record<number, Choice> = { ...prev };
 
-      // aanmaken
+      // ensure entries
       for (const id of selectedIds) {
         if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
       }
 
-      // opschonen
+      // remove deselected
       for (const key of Object.keys(next)) {
         const id = Number(key);
         if (!selectedIds.includes(id)) delete next[id];
       }
 
-      // reset punten die niet meer toegestaan zijn
+      // reset disallowed points
       const allowedSet = new Set<number>(allowedPoints);
       for (const id of Object.keys(next).map(Number)) {
         const p = next[id]?.points;
         if (p && !allowedSet.has(p)) next[id] = { ...next[id], points: null };
       }
 
-      // comfort: bij 1 keuze automatisch 3 (maar je kunt het nog “leeg” maken door te deselecteren)
+      // comfort: bij 1 keuze auto 3
       if (selectedIds.length === 1) {
         const onlyId = selectedIds[0];
-        if (next[onlyId] && next[onlyId].points == null) {
+        if (next[onlyId]?.points == null) {
           next[onlyId] = { ...next[onlyId], points: 3 };
         }
       }
@@ -103,6 +94,30 @@ export default function Home() {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
       if (prev.length >= 3) return prev;
       return [...prev, id];
+    });
+  }
+
+  function setPointsWithSwap(locationId: number, newPoints: 1 | 2 | 3) {
+    setChoices((prev) => {
+      const next = { ...prev };
+
+      // Als deze locatie nog niet bestaat (edge case)
+      if (!next[locationId]) next[locationId] = { locationId, points: null, comment: "" };
+
+      const oldHere = next[locationId].points ?? null;
+
+      // Zoek andere locatie in de selectie met hetzelfde punt
+      const otherId = selectedIds.find((sid) => sid !== locationId && next[sid]?.points === newPoints);
+
+      // Zet nieuwe punt op deze locatie
+      next[locationId] = { ...next[locationId], points: newPoints };
+
+      // Als een andere locatie dit punt al had: swap
+      if (otherId) {
+        next[otherId] = { ...next[otherId], points: oldHere };
+      }
+
+      return next;
     });
   }
 
@@ -166,10 +181,9 @@ export default function Home() {
 
       <p style={{ marginTop: 0 }}>
         Kies <b>maximaal 3</b> locaties. 1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes ={" "}
-        <b>3</b>, <b>2</b>, <b>1</b>. Jij bepaalt per locatie welke punten je geeft.
+        <b>3</b>, <b>2</b>, <b>1</b>. Jij kunt tot het verzenden punten blijven wisselen.
       </p>
 
-      {/* BLOK 1 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>1) Kies je top (max 3)</h2>
 
@@ -204,7 +218,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* BLOK 2 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe + toelichting</h2>
 
@@ -225,29 +238,21 @@ export default function Home() {
 
                     {allowedPoints.map((p) => {
                       const pNum = p as 1 | 2 | 3;
-                      const disabled = usedPoints.has(pNum) && current !== pNum;
-
                       return (
-                        <label key={p} style={{ opacity: disabled ? 0.5 : 1 }}>
+                        <label key={p} style={{ opacity: 1 }}>
                           <input
                             type="radio"
                             name={`points-${l.id}`}
                             value={p}
                             checked={current === pNum}
-                            disabled={disabled}
-                            onChange={() =>
-                              setChoices((prev) => ({
-                                ...prev,
-                                [l.id]: { ...prev[l.id], points: pNum },
-                              }))
-                            }
+                            onChange={() => setPointsWithSwap(l.id, pNum)}
                           />{" "}
                           {p}
                         </label>
                       );
                     })}
 
-                    <span style={{ color: "#777" }}>(elk punt max. 1×)</span>
+                    <span style={{ color: "#777" }}>(je kunt wisselen tot verzenden)</span>
                   </div>
 
                   <textarea
