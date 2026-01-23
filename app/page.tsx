@@ -191,22 +191,17 @@ export default function Home() {
         <h1 style={{ fontSize: 28, marginBottom: 8 }}>Dankjewel!</h1>
         <p style={{ fontSize: 18, lineHeight: 1.4 }}>Je stem is opgeslagen. Fijne avond!</p>
 
-        <button
-          onClick={() => {
-            setSubmitted(false);
-            setStatus({ type: "idle" });
-          }}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #333",
-            background: "white",
-            cursor: "pointer",
-            marginTop: 12,
-          }}
-        >
-          (Alleen organisatie) Nieuwe stem invoeren
-        </button>
+if (submitted) {
+  return (
+    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
+      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Dankjewel!</h1>
+      <p style={{ fontSize: 18, lineHeight: 1.4 }}>
+        Je stem is opgeslagen. Fijne avond!
+      </p>
+    </main>
+  );
+}
+
       </main>
     );
   }
