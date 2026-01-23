@@ -62,6 +62,11 @@ export default function Home() {
   }, [choices, selectedIds]);
 
   const canSelectMore = selectedIds.length < 3;
+const allowedPoints = useMemo(() => {
+  if (selectedIds.length === 1) return [3] as const;
+  if (selectedIds.length === 2) return [3, 2] as const;
+  return [3, 2, 1] as const; // bij 3 keuzes
+}, [selectedIds.length]);
 
   function toggleSelect(id: number) {
     setStatus({ type: "idle" });
