@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Location = {
+type LocationRow = {
   id: number;
-  locatie: string;
-  artiest: string;
+  "naam locatie": string;
+  "naam artiest": string;
   wegingsfactor: number;
 };
 
@@ -15,58 +15,55 @@ type Choice = {
   comment: string;
 };
 
-function label(l: Location) {
-  return `${l.locatie} — ${l.artiest}`;
+function label(l: LocationRow) {
+  return `${l["naam locatie"]} — ${l["naam artiest"]}`;
 }
 
-function allowedPointsFor(n: number): (1 | 2 | 3)[] {
-  if (n === 1) return [3];
-  if (n === 2) return [3, 2];
+function allowedPointsForCount(count: number): Array<1 | 2 | 3> {
+  if (count <= 0) return [];
+  if (count === 1) return [3];
+  if (count === 2) return [3, 2];
   return [3, 2, 1];
 }
 
-function expectedPointsFor(n: number): string {
-  if (n === 1) return "3";
-  if (n === 2) return "2,3";
-  return "1,2,3";
-}
-
 export default function Home() {
-  const [locations, setLocations] = useState<Location[]>([]);
+  const [locations, setLocations] = useState<LocationRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [choices, setChoices] = useState<Record<number, Choice>>({});
-  const [status, setStatus] = useState<{ type: "idle" | "error" | "ok" | "loading"; msg?: string }>({ type: "idle" });
+  const [status, setStatus] = useState<{ type: "idle" | "error" | "ok" | "loading"; msg?: string }>({
+    type: "idle",
+  });
 
-  // data laden
+  // 1) data laden
   useEffect(() => {
     (async () => {
       const res = await fetch("/api/locations", { cache: "no-store" });
       const json = await res.json();
-      setLocations((json.locations ?? []) as Location[]);
+      setLocations((json.locations ?? []) as LocationRow[]);
     })();
   }, []);
 
   const canSelectMore = selectedIds.length < 3;
 
   const selectedLocations = useMemo(
-    () => locations.filter(l => selectedIds.includes(l.id)),
+    () => locations.filter((l) => selectedIds.includes(l.id)),
     [locations, selectedIds]
   );
 
-  const allowedPoints = useMemo(() => allowedPointsFor(selectedIds.length), [selectedIds.length]);
+  const allowedPoints = useMemo(() => allowedPointsForCount(selectedIds.length), [selectedIds.length]);
 
   const usedPoints = useMemo(() => {
-    const s = new Set<number>();
+    const pts = new Set<number>();
     for (const id of selectedIds) {
       const p = choices[id]?.points;
-      if (p) s.add(p);
+      if (p) pts.add(p);
     }
-    return s;
+    return pts;
   }, [choices, selectedIds]);
 
-  // choices sync: aanmaken/verwijderen + automatisch 3 punten bij 1 keuze
+  // 2) choices bijhouden + opschonen + resetten van niet-toegestane punten
   useEffect(() => {
-    setChoices(prev => {
+    setChoices((prev) => {
       const next: Record<number, Choice> = { ...prev };
 
       // aanmaken
@@ -74,35 +71,36 @@ export default function Home() {
         if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
       }
 
-      // verwijderen
+      // opschonen
       for (const key of Object.keys(next)) {
         const id = Number(key);
         if (!selectedIds.includes(id)) delete next[id];
       }
 
-      // punten die niet meer mogen -> reset
-      const allowedSet = new Set<number>(allowedPointsFor(selectedIds.length));
+      // reset punten die niet meer toegestaan zijn
+      const allowedSet = new Set<number>(allowedPoints);
       for (const id of Object.keys(next).map(Number)) {
         const p = next[id]?.points;
-        if (p && !allowedSet.has(p)) {
-          next[id] = { ...next[id], points: null };
-        }
+        if (p && !allowedSet.has(p)) next[id] = { ...next[id], points: null };
       }
 
-      // bij 1 keuze: automatisch 3 punten, geen discussie :-)
+      // comfort: bij 1 keuze automatisch 3 (maar je kunt het nog “leeg” maken door te deselecteren)
       if (selectedIds.length === 1) {
         const onlyId = selectedIds[0];
-        next[onlyId] = { ...next[onlyId], points: 3 };
+        if (next[onlyId] && next[onlyId].points == null) {
+          next[onlyId] = { ...next[onlyId], points: 3 };
+        }
       }
 
       return next;
     });
-  }, [selectedIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIds, allowedPoints.join(",")]);
 
   function toggleSelect(id: number) {
     setStatus({ type: "idle" });
-    setSelectedIds(prev => {
-      if (prev.includes(id)) return prev.filter(x => x !== id);
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
       if (prev.length >= 3) return prev;
       return [...prev, id];
     });
@@ -111,33 +109,35 @@ export default function Home() {
   async function submit() {
     setStatus({ type: "idle" });
 
-    // max 3, maar 1 of 2 mag ook
     if (selectedIds.length < 1 || selectedIds.length > 3) {
       setStatus({ type: "error", msg: "Kies 1, 2 of 3 locaties." });
       return;
     }
 
-    const selections = selectedIds.map(id => ({
+    const selections = selectedIds.map((id) => ({
       locationId: id,
-      points: choices[id]?.points,
+      points: choices[id]?.points ?? null,
       comment: choices[id]?.comment ?? "",
     }));
 
-    if (selections.some(s => !s.points)) {
-      setStatus({ type: "error", msg: "Ken punten toe aan je gekozen locaties." });
+    if (selections.some((s) => !s.points)) {
+      setStatus({ type: "error", msg: "Ken punten toe aan alle gekozen locaties." });
       return;
     }
 
-    // controle: juiste puntenset
-    const pts = selections
-      .map(s => s.points as 1 | 2 | 3)
+    const expected = allowedPointsForCount(selectedIds.length)
+      .slice()
+      .sort((a, b) => a - b)
+      .join(",");
+    const actual = selections
+      .map((s) => s.points as 1 | 2 | 3)
+      .slice()
       .sort((a, b) => a - b)
       .join(",");
 
-    const expected = expectedPointsFor(selectedIds.length);
-    if (pts !== expected) {
+    if (actual !== expected) {
       const human = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "3 en 2" : "3, 2 en 1";
-      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt max 1×.` });
+      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt mag maar 1×.` });
       return;
     }
 
@@ -146,9 +146,7 @@ export default function Home() {
     const res = await fetch("/api/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selections: selections.map(s => ({ ...s, points: s.points as 1 | 2 | 3 })),
-      }),
+      body: JSON.stringify({ selections }),
     });
 
     const json = await res.json();
@@ -159,15 +157,16 @@ export default function Home() {
 
     setStatus({ type: "ok", msg: "Dank! Je stem is opgeslagen." });
     setSelectedIds([]);
+    setChoices({});
   }
 
   return (
-    <main style={{ maxWidth: 920, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
+    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
       <h1 style={{ fontSize: 28, marginBottom: 8 }}>Stem: Top locaties</h1>
 
       <p style={{ marginTop: 0 }}>
-        Kies <b>maximaal 3</b> locaties.
-        {" "}1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes = <b>3</b>, <b>2</b>, <b>1</b>.
+        Kies <b>maximaal 3</b> locaties. 1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes ={" "}
+        <b>3</b>, <b>2</b>, <b>1</b>. Jij bepaalt per locatie welke punten je geeft.
       </p>
 
       {/* BLOK 1 */}
@@ -178,7 +177,7 @@ export default function Home() {
           <p>Locaties laden...</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {locations.map(l => {
+            {locations.map((l) => {
               const checked = selectedIds.includes(l.id);
               const disabled = !checked && !canSelectMore;
               return (
@@ -197,7 +196,7 @@ export default function Home() {
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #eee" }}>
             <b>Jouw keuze:</b>
             <ol style={{ marginTop: 6 }}>
-              {selectedLocations.map(l => (
+              {selectedLocations.map((l) => (
                 <li key={l.id}>{label(l)}</li>
               ))}
             </ol>
@@ -213,52 +212,54 @@ export default function Home() {
           <p>Kies eerst locaties hierboven.</p>
         ) : (
           <>
-            {selectedLocations.map(l => {
+            {selectedLocations.map((l) => {
               const c = choices[l.id];
               const current = c?.points ?? null;
 
               return (
                 <div key={l.id} style={{ padding: 12, border: "1px solid #eee", borderRadius: 10, marginBottom: 10 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 8 }}>{label(l)}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{label(l)}</div>
 
-                  {/* punten */}
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
                     <span>Punten:</span>
 
-                    {selectedIds.length === 1 ? (
-                      <span style={{ fontWeight: 700 }}>3 (automatisch)</span>
-                    ) : (
-                      allowedPoints.map(p => {
-                        const disabled = usedPoints.has(p) && current !== p;
-                        return (
-                          <label key={p} style={{ opacity: disabled ? 0.5 : 1 }}>
-                            <input
-                              type="radio"
-                              name={`points-${l.id}`}
-                              value={p}
-                              checked={current === p}
-                              disabled={disabled}
-                              onChange={() =>
-                                setChoices(prev => ({ ...prev, [l.id]: { ...prev[l.id], points: p } }))
-                              }
-                            />{" "}
-                            {p}
-                          </label>
-                        );
-                      })
-                    )}
+                    {allowedPoints.map((p) => {
+                      const pNum = p as 1 | 2 | 3;
+                      const disabled = usedPoints.has(pNum) && current !== pNum;
 
-                    {selectedIds.length > 1 && <span style={{ color: "#777" }}>(elk punt max. 1×)</span>}
+                      return (
+                        <label key={p} style={{ opacity: disabled ? 0.5 : 1 }}>
+                          <input
+                            type="radio"
+                            name={`points-${l.id}`}
+                            value={p}
+                            checked={current === pNum}
+                            disabled={disabled}
+                            onChange={() =>
+                              setChoices((prev) => ({
+                                ...prev,
+                                [l.id]: { ...prev[l.id], points: pNum },
+                              }))
+                            }
+                          />{" "}
+                          {p}
+                        </label>
+                      );
+                    })}
+
+                    <span style={{ color: "#777" }}>(elk punt max. 1×)</span>
                   </div>
 
-                  {/* toelichting */}
                   <textarea
                     rows={2}
                     placeholder="Toelichting (optioneel)"
                     style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd" }}
                     value={c?.comment ?? ""}
-                    onChange={e =>
-                      setChoices(prev => ({ ...prev, [l.id]: { ...prev[l.id], comment: e.target.value } }))
+                    onChange={(e) =>
+                      setChoices((prev) => ({
+                        ...prev,
+                        [l.id]: { ...prev[l.id], comment: e.target.value },
+                      }))
                     }
                   />
                 </div>
@@ -279,9 +280,7 @@ export default function Home() {
             </button>
 
             {status.type !== "idle" && (
-              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>
-                {status.msg}
-              </p>
+              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>{status.msg}</p>
             )}
           </>
         )}
