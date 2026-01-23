@@ -1,6 +1,8 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
+import { randomUUID } from "crypto";
 
 type Selection = {
   locationId: number;
@@ -30,8 +32,7 @@ export async function POST(req: Request) {
 
     // unieke locatieIds
     const ids = selections.map((s) => s.locationId);
-    const uniqueIds = new Set(ids);
-    if (uniqueIds.size !== ids.length) {
+    if (new Set(ids).size !== ids.length) {
       return NextResponse.json({ ok: false, error: "Je kunt niet 2× op dezelfde locatie stemmen." }, { status: 400 });
     }
 
@@ -62,24 +63,24 @@ export async function POST(req: Request) {
     if (evtErr) return NextResponse.json({ ok: false, error: evtErr.message }, { status: 500 });
     if (!evt?.id) return NextResponse.json({ ok: false, error: "Geen actief evenement gevonden." }, { status: 400 });
 
-    // ✅ stemtoken genereren (NOT NULL constraint)
-    const stemtoken = crypto.randomUUID();
+    // stemtoken (NOT NULL)
+    const stemtoken = randomUUID();
 
-    // 1) inzending aanmaken
+    // inzending aanmaken
     const { data: inz, error: inzErr } = await supabase
       .from("inzendingen")
       .insert({
         evenement_id: evt.id,
-        stemtoken, // <-- belangrijk
-        // groep_id: null,   // alleen als groep_id inmiddels nullable is
+        stemtoken,
         ingediend_op: new Date().toISOString(),
+        // groep_id: null, // alleen als groep_id nullable is; anders straks via groepslink invullen
       })
       .select("id")
       .single();
 
     if (inzErr) return NextResponse.json({ ok: false, error: inzErr.message }, { status: 500 });
 
-    // 2) stemmen aanmaken
+    // stemmen aanmaken
     const rows = selections.map((s) => ({
       inzending_id: inz.id,
       locatie_id: s.locationId,
