@@ -7,7 +7,6 @@ type Location = {
   "naam locatie": string;
   "naam artiest": string;
   wegingsfactor: number;
-  evenement_id?: number;
 };
 
 type Choice = {
@@ -24,15 +23,13 @@ export default function Home() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [choices, setChoices] = useState<Record<number, Choice>>({});
-  const [status, setStatus] = useState<{
-    type: "idle" | "error" | "ok" | "loading";
-    msg?: string;
-  }>({ type: "idle" });
+  const [status, setStatus] = useState<{ type: "idle" | "error" | "ok" | "loading"; msg?: string }>({
+    type: "idle",
+  });
 
-  // 1) data laden
   useEffect(() => {
     (async () => {
-      const res = await fetch("/api/locations");
+      const res = await fetch("/api/locations", { cache: "no-store" });
       const json = await res.json();
       setLocations((json.locations ?? []) as Location[]);
     })();
@@ -45,14 +42,14 @@ export default function Home() {
 
   const canSelectMore = selectedIds.length < 3;
 
-  // 2) welke punten zijn überhaupt toegestaan, afhankelijk van # keuzes
+  // Alleen toegestane punten per aantal keuzes
   const allowedPoints = useMemo(() => {
     if (selectedIds.length === 1) return [3] as const;
     if (selectedIds.length === 2) return [3, 2] as const;
-    return [3, 2, 1] as const; // bij 3 keuzes
+    return [3, 2, 1] as const;
   }, [selectedIds.length]);
 
-  // 3) welke punten zijn al gebruikt?
+  // Welke punten zijn al gebruikt
   const usedPoints = useMemo(() => {
     const pts = new Set<number>();
     for (const id of selectedIds) {
@@ -62,36 +59,38 @@ export default function Home() {
     return pts;
   }, [choices, selectedIds]);
 
-  // 4) choices bijhouden + opschonen + punten resetten als ze niet meer mogen
+  // Choices syncen + punten wissen die niet meer mogen (bij wissel 3->2 of 2->1)
   useEffect(() => {
     setChoices(prev => {
       const next: Record<number, Choice> = { ...prev };
 
-      // maak keuze-objecten aan
+      // ensure exists
       for (const id of selectedIds) {
         if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
       }
 
-      // verwijder niet-geselecteerde
+      // remove deselected
       for (const key of Object.keys(next)) {
         const id = Number(key);
         if (!selectedIds.includes(id)) delete next[id];
       }
 
-      // reset punten die niet meer toegestaan zijn
-      const allowed = new Set<number>(
-        selectedIds.length === 1 ? [3] : selectedIds.length === 2 ? [3, 2] : [3, 2, 1]
-      );
+      // reset disallowed points
+      const allowed = new Set<number>(allowedPoints as unknown as number[]);
       for (const id of Object.keys(next).map(Number)) {
         const p = next[id]?.points;
-        if (p && !allowed.has(p)) {
-          next[id] = { ...next[id], points: null };
-        }
+        if (p && !allowed.has(p)) next[id] = { ...next[id], points: null };
+      }
+
+      // Auto-assign bij 1 keuze: altijd 3
+      if (selectedIds.length === 1) {
+        const onlyId = selectedIds[0];
+        next[onlyId] = { ...next[onlyId], points: 3 };
       }
 
       return next;
     });
-  }, [selectedIds]);
+  }, [selectedIds, allowedPoints]);
 
   function toggleSelect(id: number) {
     setStatus({ type: "idle" });
@@ -105,7 +104,7 @@ export default function Home() {
   async function submit() {
     setStatus({ type: "idle" });
 
-    // max 3, maar 1 of 2 mag ook
+    // ✅ max 3, maar 1 of 2 mag ook
     if (selectedIds.length < 1 || selectedIds.length > 3) {
       setStatus({ type: "error", msg: "Kies 1, 2 of 3 locaties." });
       return;
@@ -117,13 +116,12 @@ export default function Home() {
       comment: choices[id]?.comment ?? "",
     }));
 
-    // punten moeten ingevuld zijn voor alle gekozen locaties
     if (selections.some(s => !s.points)) {
       setStatus({ type: "error", msg: "Ken punten toe aan je gekozen locaties." });
       return;
     }
 
-    // validatie puntenset afhankelijk van aantal keuzes
+    // verwachtte puntensets:
     const pts = selections
       .map(s => s.points as 1 | 2 | 3)
       .sort((a, b) => a - b)
@@ -133,7 +131,7 @@ export default function Home() {
 
     if (pts !== expected) {
       const human = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "3 en 2" : "3, 2 en 1";
-      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt mag maar 1×.` });
+      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt max. 1×.` });
       return;
     }
 
@@ -159,11 +157,9 @@ export default function Home() {
     <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
       <h1 style={{ fontSize: 28, marginBottom: 8 }}>Stem: Top locaties</h1>
       <p style={{ marginTop: 0 }}>
-        Kies <b>maximaal 3</b> locaties.
-        {" "}1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes = <b>3</b>, <b>2</b>, <b>1</b>.
+        Kies <b>maximaal 3</b> locaties. 1 keuze = <b>3</b>. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes = <b>3</b>, <b>2</b>, <b>1</b>.
       </p>
 
-      {/* BLOK 1 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>1) Kies je top (max 3)</h2>
 
@@ -185,20 +181,8 @@ export default function Home() {
         )}
 
         <p style={{ color: "#555", marginBottom: 0 }}>Gekozen: {selectedIds.length}/3</p>
-
-        {selectedIds.length > 0 && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #eee" }}>
-            <b>Jouw keuze:</b>
-            <ol style={{ marginTop: 6 }}>
-              {selectedLocations.map(l => (
-                <li key={l.id}>{label(l)}</li>
-              ))}
-            </ol>
-          </div>
-        )}
       </section>
 
-      {/* BLOK 2 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe + toelichting</h2>
 
@@ -220,7 +204,6 @@ export default function Home() {
                     {allowedPoints.map(p => {
                       const pNum = p as 1 | 2 | 3;
                       const disabled = usedPoints.has(pNum) && current !== pNum;
-
                       return (
                         <label key={p} style={{ opacity: disabled ? 0.5 : 1 }}>
                           <input
@@ -256,13 +239,7 @@ export default function Home() {
 
             <button
               onClick={submit}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: "1px solid #333",
-                background: "white",
-                cursor: "pointer",
-              }}
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #333", background: "white", cursor: "pointer" }}
             >
               Verstuur stem
             </button>
