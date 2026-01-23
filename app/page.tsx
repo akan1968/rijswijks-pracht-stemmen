@@ -7,11 +7,8 @@ type Location = {
   "naam locatie": string;
   "naam artiest": string;
   wegingsfactor: number;
+  evenement_id?: number;
 };
-
-function label(l: Location) {
-  return `${l["naam locatie"]} — ${l["naam artiest"]}`;
-}
 
 type Choice = {
   locationId: number;
@@ -19,12 +16,20 @@ type Choice = {
   comment: string;
 };
 
+function label(l: Location) {
+  return `${l["naam locatie"]} — ${l["naam artiest"]}`;
+}
+
 export default function Home() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [choices, setChoices] = useState<Record<number, Choice>>({});
-  const [status, setStatus] = useState<{ type: "idle" | "error" | "ok" | "loading"; msg?: string }>({ type: "idle" });
+  const [status, setStatus] = useState<{
+    type: "idle" | "error" | "ok" | "loading";
+    msg?: string;
+  }>({ type: "idle" });
 
+  // 1) data laden
   useEffect(() => {
     (async () => {
       const res = await fetch("/api/locations");
@@ -33,25 +38,21 @@ export default function Home() {
     })();
   }, []);
 
-  useEffect(() => {
-    setChoices(prev => {
-      const next = { ...prev };
-      for (const id of selectedIds) {
-        if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
-      }
-      for (const key of Object.keys(next)) {
-        const id = Number(key);
-        if (!selectedIds.includes(id)) delete next[id];
-      }
-      return next;
-    });
-  }, [selectedIds]);
-
   const selectedLocations = useMemo(
     () => locations.filter(l => selectedIds.includes(l.id)),
     [locations, selectedIds]
   );
 
+  const canSelectMore = selectedIds.length < 3;
+
+  // 2) welke punten zijn überhaupt toegestaan, afhankelijk van # keuzes
+  const allowedPoints = useMemo(() => {
+    if (selectedIds.length === 1) return [3] as const;
+    if (selectedIds.length === 2) return [3, 2] as const;
+    return [3, 2, 1] as const; // bij 3 keuzes
+  }, [selectedIds.length]);
+
+  // 3) welke punten zijn al gebruikt?
   const usedPoints = useMemo(() => {
     const pts = new Set<number>();
     for (const id of selectedIds) {
@@ -61,12 +62,36 @@ export default function Home() {
     return pts;
   }, [choices, selectedIds]);
 
-  const canSelectMore = selectedIds.length < 3;
-const allowedPoints = useMemo(() => {
-  if (selectedIds.length === 1) return [3] as const;
-  if (selectedIds.length === 2) return [3, 2] as const;
-  return [3, 2, 1] as const; // bij 3 keuzes
-}, [selectedIds.length]);
+  // 4) choices bijhouden + opschonen + punten resetten als ze niet meer mogen
+  useEffect(() => {
+    setChoices(prev => {
+      const next: Record<number, Choice> = { ...prev };
+
+      // maak keuze-objecten aan
+      for (const id of selectedIds) {
+        if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
+      }
+
+      // verwijder niet-geselecteerde
+      for (const key of Object.keys(next)) {
+        const id = Number(key);
+        if (!selectedIds.includes(id)) delete next[id];
+      }
+
+      // reset punten die niet meer toegestaan zijn
+      const allowed = new Set<number>(
+        selectedIds.length === 1 ? [3] : selectedIds.length === 2 ? [3, 2] : [3, 2, 1]
+      );
+      for (const id of Object.keys(next).map(Number)) {
+        const p = next[id]?.points;
+        if (p && !allowed.has(p)) {
+          next[id] = { ...next[id], points: null };
+        }
+      }
+
+      return next;
+    });
+  }, [selectedIds]);
 
   function toggleSelect(id: number) {
     setStatus({ type: "idle" });
@@ -80,10 +105,11 @@ const allowedPoints = useMemo(() => {
   async function submit() {
     setStatus({ type: "idle" });
 
-   if (selectedIds.length < 1 || selectedIds.length > 3) {
-  setStatus({ type: "error", msg: "Kies 1, 2 of 3 locaties." });
-  return;
-}
+    // max 3, maar 1 of 2 mag ook
+    if (selectedIds.length < 1 || selectedIds.length > 3) {
+      setStatus({ type: "error", msg: "Kies 1, 2 of 3 locaties." });
+      return;
+    }
 
     const selections = selectedIds.map(id => ({
       locationId: id,
@@ -91,18 +117,25 @@ const allowedPoints = useMemo(() => {
       comment: choices[id]?.comment ?? "",
     }));
 
+    // punten moeten ingevuld zijn voor alle gekozen locaties
     if (selections.some(s => !s.points)) {
-  setStatus({ type: "error", msg: "Ken punten toe aan je gekozen locaties." });
-  return;
-}
+      setStatus({ type: "error", msg: "Ken punten toe aan je gekozen locaties." });
+      return;
+    }
 
-const pts = selections.map(s => s.points).sort((a, b) => (a! - b!)).join(",");
-const expected = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "2,3" : "1,2,3";
+    // validatie puntenset afhankelijk van aantal keuzes
+    const pts = selections
+      .map(s => s.points as 1 | 2 | 3)
+      .sort((a, b) => a - b)
+      .join(",");
 
-if (pts !== expected) {
-  setStatus({ type: "error", msg: `Gebruik de punten ${expected.replace(",", " en ").replace("2,3", "3 en 2")} (elk maar 1×).` });
-  return;
-}
+    const expected = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "2,3" : "1,2,3";
+
+    if (pts !== expected) {
+      const human = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "3 en 2" : "3, 2 en 1";
+      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt mag maar 1×.` });
+      return;
+    }
 
     setStatus({ type: "loading", msg: "Versturen..." });
 
@@ -123,14 +156,16 @@ if (pts !== expected) {
   }
 
   return (
-    <main style={{ maxWidth: 820, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Stem: Top 3 locaties</h1>
+    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
+      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Stem: Top locaties</h1>
       <p style={{ marginTop: 0 }}>
-        Kies <b>precies 3</b> locaties. Verdeel daarna de punten: <b>3</b> (winnaar), <b>2</b> (tweede), <b>1</b> (derde).
+        Kies <b>maximaal 3</b> locaties.
+        {" "}1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes = <b>3</b>, <b>2</b>, <b>1</b>.
       </p>
 
+      {/* BLOK 1 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, marginTop: 0 }}>1) Kies je top 3 (max 3)</h2>
+        <h2 style={{ fontSize: 18, marginTop: 0 }}>1) Kies je top (max 3)</h2>
 
         {locations.length === 0 ? (
           <p>Locaties laden...</p>
@@ -150,17 +185,20 @@ if (pts !== expected) {
         )}
 
         <p style={{ color: "#555", marginBottom: 0 }}>Gekozen: {selectedIds.length}/3</p>
-      </section>
+
         {selectedIds.length > 0 && (
-  <div style={{ marginTop: 8 }}>
-    <b>Jouw keuze:</b>
-    <ol style={{ marginTop: 6 }}>
-      {selectedLocations.map(l => (
-        <li key={l.id}>{label(l)}</li>
-      ))}
-    </ol>
-  </div>
-)}
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #eee" }}>
+            <b>Jouw keuze:</b>
+            <ol style={{ marginTop: 6 }}>
+              {selectedLocations.map(l => (
+                <li key={l.id}>{label(l)}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </section>
+
+      {/* BLOK 2 */}
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe + toelichting</h2>
 
@@ -176,11 +214,13 @@ if (pts !== expected) {
                 <div key={l.id} style={{ padding: 12, border: "1px solid #eee", borderRadius: 10, marginBottom: 10 }}>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>{label(l)}</div>
 
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
                     <span>Punten:</span>
-                    {[3, 2, 1].map(p => {
+
+                    {allowedPoints.map(p => {
                       const pNum = p as 1 | 2 | 3;
                       const disabled = usedPoints.has(pNum) && current !== pNum;
+
                       return (
                         <label key={p} style={{ opacity: disabled ? 0.5 : 1 }}>
                           <input
@@ -197,7 +237,8 @@ if (pts !== expected) {
                         </label>
                       );
                     })}
-                    <span style={{ color: "#777" }}>(elk getal kan maar 1×)</span>
+
+                    <span style={{ color: "#777" }}>(elk punt max. 1×)</span>
                   </div>
 
                   <textarea
@@ -205,18 +246,31 @@ if (pts !== expected) {
                     placeholder="Toelichting (optioneel)"
                     style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ddd" }}
                     value={c?.comment ?? ""}
-                    onChange={e => setChoices(prev => ({ ...prev, [l.id]: { ...prev[l.id], comment: e.target.value } }))}
+                    onChange={e =>
+                      setChoices(prev => ({ ...prev, [l.id]: { ...prev[l.id], comment: e.target.value } }))
+                    }
                   />
                 </div>
               );
             })}
 
-            <button onClick={submit} style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #333", background: "white" }}>
+            <button
+              onClick={submit}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #333",
+                background: "white",
+                cursor: "pointer",
+              }}
+            >
               Verstuur stem
             </button>
 
             {status.type !== "idle" && (
-              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>{status.msg}</p>
+              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>
+                {status.msg}
+              </p>
             )}
           </>
         )}
