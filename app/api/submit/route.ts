@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 
-type Selection = { locationId: number; points: 1 | 2 | 3; comment?: string };
+type Selection = {
+  locationId: number;
+  points: 1 | 2 | 3;
+  comment?: string;
+};
 
-function expectedPoints(count: number) {
+function allowedPointsForCount(count: number): number[] {
   if (count === 1) return [3];
-  if (count === 2) return [2, 3];
-  return [1, 2, 3];
+  if (count === 2) return [3, 2];
+  if (count === 3) return [3, 2, 1];
+  return [];
 }
 
 export async function POST(req: Request) {
@@ -23,25 +27,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Kies 1, 2 of 3 locaties." }, { status: 400 });
     }
 
-    // unieke locatie_ids
-    const ids = selections.map(s => s.locationId);
-    if (new Set(ids).size !== ids.length) {
-      return NextResponse.json({ ok: false, error: "Je mag per locatie maar 1× stemmen." }, { status: 400 });
+    // unieke locatieIds
+    const ids = selections.map((s) => s.locationId);
+    const uniqueIds = new Set(ids);
+    if (uniqueIds.size !== ids.length) {
+      return NextResponse.json({ ok: false, error: "Je kunt niet 2× op dezelfde locatie stemmen." }, { status: 400 });
     }
 
-    // punten validatie
-    const pts = selections.map(s => s.points).sort((a, b) => a - b);
-    const exp = expectedPoints(selections.length);
-    if (pts.join(",") !== exp.join(",")) {
-      const human = selections.length === 1 ? "3" : selections.length === 2 ? "3 en 2" : "3, 2 en 1";
-      return NextResponse.json(
-        { ok: false, error: `Gebruik de juiste punten: ${human}. Elk punt maar 1×.` },
-        { status: 400 }
-      );
+    // punten-set controleren
+    const expected = allowedPointsForCount(selections.length).slice().sort((a, b) => a - b).join(",");
+    const actual = selections
+      .map((s) => s.points)
+      .slice()
+      .sort((a, b) => a - b)
+      .join(",");
+
+    if (actual !== expected) {
+      return NextResponse.json({ ok: false, error: "Puntentoekenning klopt niet (3 / 3+2 / 3+2+1)." }, { status: 400 });
     }
 
-    // actief evenement
-    const { data: ev, error: evErr } = await supabase
+    // Actief evenement ophalen (jij zei: id=1 werkt)
+    const { data: evt, error: evtErr } = await supabase
       .from("evenementen")
       .select("id")
       .eq("actief", true)
@@ -49,39 +55,39 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (evErr) throw evErr;
-    if (!ev?.id) {
-      return NextResponse.json({ ok: false, error: "Geen actief evenement gevonden." }, { status: 500 });
+    if (evtErr) {
+      return NextResponse.json({ ok: false, error: evtErr.message }, { status: 500 });
+    }
+    if (!evt?.id) {
+      return NextResponse.json({ ok: false, error: "Geen actief evenement gevonden." }, { status: 400 });
     }
 
-    // maak inzending
-    const stemtoken = crypto.randomUUID();
+    // 1) inzending aanmaken
     const { data: inz, error: inzErr } = await supabase
       .from("inzendingen")
-      .insert({
-        evenement_id: ev.id,
-        groep_id: null, // later gaan we dit gebruiken
-        stemtoken,
-        ingediend_op: new Date().toISOString(),
-      })
+      .insert({ evenement_id: evt.id })
       .select("id")
       .single();
 
-    if (inzErr) throw inzErr;
+    if (inzErr) {
+      return NextResponse.json({ ok: false, error: inzErr.message }, { status: 500 });
+    }
 
-    // maak stemmen
-    const rows = selections.map(s => ({
+    // 2) stemmen aanmaken
+    const rows = selections.map((s) => ({
       inzending_id: inz.id,
       locatie_id: s.locationId,
       punten: s.points,
       toelichting: (s.comment ?? "").trim() || null,
     }));
 
-    const { error: stErr } = await supabase.from("stemmen").insert(rows);
-    if (stErr) throw stErr;
+    const { error: stemErr } = await supabase.from("stemmen").insert(rows);
+    if (stemErr) {
+      return NextResponse.json({ ok: false, error: stemErr.message }, { status: 500 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message ?? "Onbekende fout." }, { status: 500 });
   }
 }
