@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 type Selection = {
   locationId: number;
@@ -43,10 +44,13 @@ export async function POST(req: Request) {
       .join(",");
 
     if (actual !== expected) {
-      return NextResponse.json({ ok: false, error: "Puntentoekenning klopt niet (3 / 3+2 / 3+2+1)." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Puntentoekenning klopt niet (1 keuze: 3 / 2 keuzes: 3+2 / 3 keuzes: 3+2+1)." },
+        { status: 400 }
+      );
     }
 
-    // Actief evenement ophalen (jij zei: id=1 werkt)
+    // Actief evenement ophalen
     const { data: evt, error: evtErr } = await supabase
       .from("evenementen")
       .select("id")
@@ -55,23 +59,25 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (evtErr) {
-      return NextResponse.json({ ok: false, error: evtErr.message }, { status: 500 });
-    }
-    if (!evt?.id) {
-      return NextResponse.json({ ok: false, error: "Geen actief evenement gevonden." }, { status: 400 });
-    }
+    if (evtErr) return NextResponse.json({ ok: false, error: evtErr.message }, { status: 500 });
+    if (!evt?.id) return NextResponse.json({ ok: false, error: "Geen actief evenement gevonden." }, { status: 400 });
+
+    // ✅ stemtoken genereren (NOT NULL constraint)
+    const stemtoken = crypto.randomUUID();
 
     // 1) inzending aanmaken
     const { data: inz, error: inzErr } = await supabase
       .from("inzendingen")
-      .insert({ evenement_id: evt.id })
+      .insert({
+        evenement_id: evt.id,
+        stemtoken, // <-- belangrijk
+        // groep_id: null,   // alleen als groep_id inmiddels nullable is
+        ingediend_op: new Date().toISOString(),
+      })
       .select("id")
       .single();
 
-    if (inzErr) {
-      return NextResponse.json({ ok: false, error: inzErr.message }, { status: 500 });
-    }
+    if (inzErr) return NextResponse.json({ ok: false, error: inzErr.message }, { status: 500 });
 
     // 2) stemmen aanmaken
     const rows = selections.map((s) => ({
@@ -82,9 +88,7 @@ export async function POST(req: Request) {
     }));
 
     const { error: stemErr } = await supabase.from("stemmen").insert(rows);
-    if (stemErr) {
-      return NextResponse.json({ ok: false, error: stemErr.message }, { status: 500 });
-    }
+    if (stemErr) return NextResponse.json({ ok: false, error: stemErr.message }, { status: 500 });
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
