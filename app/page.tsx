@@ -33,11 +33,8 @@ export default function Home() {
   const [status, setStatus] = useState<{ type: "idle" | "error" | "ok" | "loading"; msg?: string }>({
     type: "idle",
   });
-
-  // ✅ nieuw: bedankt-modus
   const [submitted, setSubmitted] = useState(false);
 
-  // locaties laden
   useEffect(() => {
     (async () => {
       const res = await fetch("/api/locations", { cache: "no-store" });
@@ -55,31 +52,25 @@ export default function Home() {
 
   const allowedPoints = useMemo(() => allowedPointsForCount(selectedIds.length), [selectedIds.length]);
 
-  // choices bijhouden + opschonen + resetten van niet-toegestane punten
   useEffect(() => {
     setChoices((prev) => {
       const next: Record<number, Choice> = { ...prev };
 
-      // ensure entries
       for (const id of selectedIds) {
         if (!next[id]) next[id] = { locationId: id, points: null, comment: "" };
       }
 
-      // remove deselected
       for (const key of Object.keys(next)) {
         const id = Number(key);
         if (!selectedIds.includes(id)) delete next[id];
       }
 
-      // note: we resetten hier NIET meer op "usedPoints", want swap regelt dat
-      // wél resetten we punten die niet meer toegestaan zijn door #keuzes
       const allowedSet = new Set<number>(allowedPoints);
       for (const id of Object.keys(next).map(Number)) {
         const p = next[id]?.points;
         if (p && !allowedSet.has(p)) next[id] = { ...next[id], points: null };
       }
 
-      // comfort: bij 1 keuze auto 3
       if (selectedIds.length === 1) {
         const onlyId = selectedIds[0];
         if (next[onlyId]?.points == null) {
@@ -89,8 +80,7 @@ export default function Home() {
 
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds, allowedPoints.join(",")]);
+  }, [selectedIds, allowedPoints]);
 
   function toggleSelect(id: number) {
     setStatus({ type: "idle" });
@@ -101,7 +91,6 @@ export default function Home() {
     });
   }
 
-  // ✅ swap-logica: punten blijven altijd wijzigbaar
   function setPointsWithSwap(locationId: number, newPoints: 1 | 2 | 3) {
     setChoices((prev) => {
       const next = { ...prev };
@@ -110,13 +99,10 @@ export default function Home() {
 
       const oldHere = next[locationId].points ?? null;
 
-      // andere locatie binnen selectie met dit punt?
       const otherId = selectedIds.find((sid) => sid !== locationId && next[sid]?.points === newPoints);
 
-      // zet punt hier
       next[locationId] = { ...next[locationId], points: newPoints };
 
-      // swap naar andere locatie (die krijgt oude punt van deze locatie)
       if (otherId) {
         next[otherId] = { ...next[otherId], points: oldHere };
       }
@@ -144,11 +130,11 @@ export default function Home() {
       return;
     }
 
-    // punten-set moet kloppen bij #keuzes
     const expected = allowedPointsForCount(selectedIds.length)
       .slice()
       .sort((a, b) => a - b)
       .join(",");
+
     const actual = selections
       .map((s) => s.points as 1 | 2 | 3)
       .slice()
@@ -156,8 +142,7 @@ export default function Home() {
       .join(",");
 
     if (actual !== expected) {
-      const human = selectedIds.length === 1 ? "3" : selectedIds.length === 2 ? "3 en 2" : "3, 2 en 1";
-      setStatus({ type: "error", msg: `Gebruik de juiste punten: ${human}. Elk punt mag maar 1×.` });
+      setStatus({ type: "error", msg: "Puntentoekenning klopt niet." });
       return;
     }
 
@@ -175,33 +160,20 @@ export default function Home() {
       return;
     }
 
-    // ✅ succes → bedankt-modus
     setStatus({ type: "ok", msg: "Dank! Je stem is opgeslagen." });
     setSubmitted(true);
 
-    // reset keuze-state
     setSelectedIds([]);
     setChoices({});
   }
 
-  // ✅ Bedankt-scherm
   if (submitted) {
     return (
       <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
         <h1 style={{ fontSize: 28, marginBottom: 8 }}>Dankjewel!</h1>
-        <p style={{ fontSize: 18, lineHeight: 1.4 }}>Je stem is opgeslagen. Fijne avond!</p>
-
-if (submitted) {
-  return (
-    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Dankjewel!</h1>
-      <p style={{ fontSize: 18, lineHeight: 1.4 }}>
-        Je stem is opgeslagen. Fijne avond!
-      </p>
-    </main>
-  );
-}
-
+        <p style={{ fontSize: 18, lineHeight: 1.4 }}>
+          Je stem is opgeslagen. Fijne avond!
+        </p>
       </main>
     );
   }
@@ -211,8 +183,10 @@ if (submitted) {
       <h1 style={{ fontSize: 28, marginBottom: 8 }}>Stem: Top locaties</h1>
 
       <p style={{ marginTop: 0 }}>
-        Kies <b>maximaal 3</b> locaties. 1 keuze = <b>3</b> punten. 2 keuzes = <b>3</b> en <b>2</b>. 3 keuzes ={" "}
-        <b>3</b>, <b>2</b>, <b>1</b>. Jij kunt tot het verzenden punten blijven wisselen.
+        Kies <b>maximaal 3</b> locaties.  
+        1 keuze = <b>3</b> punten.  
+        2 keuzes = <b>3</b> en <b>2</b>.  
+        3 keuzes = <b>3</b>, <b>2</b>, <b>1</b>.
       </p>
 
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -236,21 +210,10 @@ if (submitted) {
         )}
 
         <p style={{ color: "#555", marginBottom: 0 }}>Gekozen: {selectedIds.length}/3</p>
-
-        {selectedIds.length > 0 && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #eee" }}>
-            <b>Jouw keuze:</b>
-            <ol style={{ marginTop: 6 }}>
-              {selectedLocations.map((l) => (
-                <li key={l.id}>{label(l)}</li>
-              ))}
-            </ol>
-          </div>
-        )}
       </section>
 
       <section style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
-        <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe + toelichting</h2>
+        <h2 style={{ fontSize: 18, marginTop: 0 }}>2) Ken punten toe</h2>
 
         {selectedIds.length === 0 ? (
           <p>Kies eerst locaties hierboven.</p>
@@ -270,7 +233,7 @@ if (submitted) {
                     {allowedPoints.map((p) => {
                       const pNum = p as 1 | 2 | 3;
                       return (
-                        <label key={p} style={{ opacity: 1 }}>
+                        <label key={p}>
                           <input
                             type="radio"
                             name={`points-${l.id}`}
@@ -282,8 +245,6 @@ if (submitted) {
                         </label>
                       );
                     })}
-
-                    <span style={{ color: "#777" }}>(je kunt wisselen tot verzenden)</span>
                   </div>
 
                   <textarea
@@ -316,7 +277,9 @@ if (submitted) {
             </button>
 
             {status.type !== "idle" && (
-              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>{status.msg}</p>
+              <p style={{ marginTop: 10, color: status.type === "error" ? "#b00020" : "#1b5e20" }}>
+                {status.msg}
+              </p>
             )}
           </>
         )}
@@ -324,4 +287,3 @@ if (submitted) {
     </main>
   );
 }
-
