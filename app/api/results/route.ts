@@ -3,24 +3,25 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function GET(req: Request) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const requiredKey = process.env.RESULTS_VIEW_KEY;
 
-    if (!supabaseUrl || !serviceRoleKey) {
+    if (!supabaseUrl || !serviceRoleKey || !requiredKey) {
       return NextResponse.json(
-        { ok: false, error: "Server mist Supabase env vars." },
+        { ok: false, error: "Server mist environment variables." },
         { status: 500 }
       );
     }
 
-    // optioneel beveiligen met key in de url: /api/results?key=....
-    if (requiredKey) {
-      const { searchParams } = new URL(req.url);
-      const providedKey = searchParams.get("key") ?? "";
-      if (providedKey !== requiredKey) {
-        return NextResponse.json({ ok: false, error: "Geen toegang." }, { status: 401 });
-      }
+    const { searchParams } = new URL(req.url);
+    const providedKey = searchParams.get("key") ?? "";
+
+    if (providedKey !== requiredKey) {
+      return NextResponse.json(
+        { ok: false, error: "Geen toegang." },
+        { status: 401 }
+      );
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -31,7 +32,10 @@ export async function GET(req: Request) {
       .order("positie", { ascending: true });
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true, rows: data ?? [] });
