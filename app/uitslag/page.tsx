@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type ResultRow = {
+type Row = {
   positie: number;
-  locatie_id: number;
   locatie: string;
   artiest: string;
   wegingsfactor: number;
@@ -17,129 +16,101 @@ type ResultRow = {
 };
 
 export default function UitslagPage() {
-  const [rows, setRows] = useState<ResultRow[]>([]);
-  const [status, setStatus] = useState<{ type: "idle" | "loading" | "error"; msg?: string }>({
-    type: "idle",
-  });
-
-  const key = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return new URLSearchParams(window.location.search).get("key") ?? "";
-  }, []);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [status, setStatus] = useState<"loading" | "idle" | "error">("loading");
 
   useEffect(() => {
     (async () => {
-      setStatus({ type: "loading", msg: "Uitslag laden..." });
+      try {
+        const res = await fetch(`/api/results${window.location.search}`);
+        const json = await res.json();
 
-      if (!key) {
-        setStatus({ type: "error", msg: "Geen key in de URL. Voeg ?key=... toe." });
-        return;
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error ?? "Fout bij ophalen uitslag");
+        }
+
+        setRows(json.rows ?? []);
+        setStatus("idle");
+      } catch (e) {
+        console.error(e);
+        setStatus("error");
       }
-
-      const res = await fetch(`/api/results?key=${encodeURIComponent(key)}`, { cache: "no-store" });
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        setStatus({ type: "error", msg: json.error ?? "Kon uitslag niet laden." });
-        return;
-      }
-
-      setRows((json.rows ?? []) as ResultRow[]);
-      setStatus({ type: "idle" });
     })();
-  }, [key]);
+  }, []);
+
+  const totaalStemmen = useMemo(
+    () => rows.reduce((sum, r) => sum + (r.stemmen_aantal ?? 0), 0),
+    [rows]
+  );
+
+  if (status === "loading") return <p style={{ padding: 20 }}>Uitslag laden…</p>;
+  if (status === "error") return <p style={{ padding: 20 }}>Fout bij laden uitslag.</p>;
 
   return (
-    <main style={{ maxWidth: 1100, margin: "30px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Uitslag</h1>
+    <main style={{ maxWidth: 1100, margin: "40px auto", padding: 16, fontFamily: "system-ui, Arial" }}>
+      <h1 style={{ fontSize: 28, marginBottom: 6 }}>Uitslag publieksstemming</h1>
+
       <p style={{ marginTop: 0, color: "#555" }}>
-        Privé overzicht (alleen met geheime link).
+        Privé overzicht (alleen toegankelijk via geheime link).
       </p>
 
-      {status.type === "loading" && <p>{status.msg}</p>}
-      {status.type === "error" && <p style={{ color: "#b00020" }}>{status.msg}</p>}
-
-      {status.type === "idle" && rows.length > 0 && (
-        <div style={{ overflowX: "auto", border: "1px solid #eee", borderRadius: 12 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#fafafa" }}>
-                <Th>#</Th>
-                <Th>Locatie — artiest</Th>
-                <Th align="right">Totaal punten</Th>
-                <Th align="right"># stemmen</Th>
-                <Th align="right">#3</Th>
-                <Th align="right">#2</Th>
-                <Th align="right">#1</Th>
-                <Th>Toelichting (bundels)</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.locatie_id} style={{ borderTop: "1px solid #eee" }}>
-                  <Td>{r.positie}</Td>
-                  <Td>
-                    <b>{r.locatie}</b> — {r.artiest}
-                  </Td>
-                  <Td align="right">{r.punten_totaal}</Td>
-                  <Td align="right">{r.stemmen_aantal}</Td>
-                  <Td align="right">{r.aantal_3}</Td>
-                  <Td align="right">{r.aantal_2}</Td>
-                  <Td align="right">{r.aantal_1}</Td>
-                  <Td style={{ color: "#444" }}>{r.toelichting_bundel || "—"}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {status.type === "idle" && rows.length === 0 && (
-        <p>Geen resultaten gevonden (nog geen stemmen?).</p>
-      )}
-
-      <p style={{ marginTop: 14, color: "#777", fontSize: 13 }}>
-        Tip: bookmark deze link inclusief key.
+      <p style={{ marginTop: 0, marginBottom: 20, fontSize: 16 }}>
+        <b>Totaal aantal stemmen:</b> {totaalStemmen}
       </p>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+        <thead>
+          <tr style={{ background: "#f2f2f2" }}>
+            <th style={th}>#</th>
+            <th style={th}>Locatie</th>
+            <th style={th}>Artiest</th>
+            <th style={th}>Totaal punten</th>
+            <th style={th}>Stemmen</th>
+            <th style={th}>#3</th>
+            <th style={th}>#2</th>
+            <th style={th}>#1</th>
+            <th style={th}>Toelichting (bundel)</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.positie}>
+              <td style={tdCenter}>{r.positie}</td>
+              <td style={td}>{r.locatie}</td>
+              <td style={td}>{r.artiest}</td>
+              <td style={tdCenter}><b>{r.punten_totaal}</b></td>
+              <td style={tdCenter}>{r.stemmen_aantal}</td>
+              <td style={tdCenter}>{r.aantal_3}</td>
+              <td style={tdCenter}>{r.aantal_2}</td>
+              <td style={tdCenter}>{r.aantal_1}</td>
+              <td style={tdSmall}>{r.toelichting_bundel || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </main>
   );
 }
 
-function Th({ children, align }: { children: any; align?: "right" | "left" | "center" }) {
-  return (
-    <th
-      style={{
-        textAlign: align ?? "left",
-        padding: "10px 12px",
-        fontSize: 13,
-        color: "#444",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {children}
-    </th>
-  );
-}
+const th: React.CSSProperties = {
+  padding: 8,
+  borderBottom: "2px solid #ddd",
+  textAlign: "left",
+};
 
-function Td({
-  children,
-  align,
-  style,
-}: {
-  children: any;
-  align?: "right" | "left" | "center";
-  style?: React.CSSProperties;
-}) {
-  return (
-    <td
-      style={{
-        textAlign: align ?? "left",
-        padding: "10px 12px",
-        verticalAlign: "top",
-        ...style,
-      }}
-    >
-      {children}
-    </td>
-  );
-}
+const td: React.CSSProperties = {
+  padding: 8,
+  borderBottom: "1px solid #eee",
+};
+
+const tdCenter: React.CSSProperties = {
+  ...td,
+  textAlign: "center",
+};
+
+const tdSmall: React.CSSProperties = {
+  ...td,
+  fontSize: 12,
+  color: "#444",
+};
