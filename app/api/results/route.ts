@@ -18,10 +18,7 @@ export async function GET(req: Request) {
     const providedKey = searchParams.get("key") ?? "";
 
     if (providedKey !== requiredKey) {
-      return NextResponse.json(
-        { ok: false, error: "Geen toegang." },
-        { status: 401 }
-      );
+      return NextResponse.json({ ok: false, error: "Geen toegang." }, { status: 401 });
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -32,10 +29,7 @@ export async function GET(req: Request) {
       .order("positie", { ascending: true });
 
     if (error) {
-      return NextResponse.json(
-        { ok: false, error: error.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, rows: data ?? [] });
