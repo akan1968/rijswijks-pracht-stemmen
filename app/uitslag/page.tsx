@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type Row = {
   positie: number;
+  locatie_id?: number;
   locatie: string;
   artiest: string;
   wegingsfactor: number;
@@ -12,17 +13,27 @@ type Row = {
   aantal_3: number;
   aantal_2: number;
   aantal_1: number;
-  toelichting_bundel: string;
+  toelichting_bundel: string | null;
 };
 
 export default function UitslagPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [status, setStatus] = useState<"loading" | "idle" | "error">("loading");
 
+  const key = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("key") ?? "";
+  }, []);
+
+  const csvUrl = useMemo(() => {
+    // dezelfde key doorgeven
+    const qs = typeof window !== "undefined" ? window.location.search : "";
+    return `/api/results.csv${qs}`;
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        // key blijft in de URL: /uitslag?key=...
         const res = await fetch(`/api/results${window.location.search}`, { cache: "no-store" });
         const json = await res.json();
 
@@ -55,9 +66,33 @@ export default function UitslagPage() {
         Privé overzicht (alleen toegankelijk via geheime link).
       </p>
 
-      <p style={{ marginTop: 0, marginBottom: 20, fontSize: 16 }}>
-        <b>Totaal aantal stemmen:</b> {totaalStemmen}
-      </p>
+      {!key && (
+        <p style={{ marginTop: 0, color: "#b00020" }}>
+          Let op: er staat geen <code>?key=...</code> in de URL. De API zal dan weigeren.
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+        <p style={{ margin: 0, fontSize: 16 }}>
+          <b>Totaal aantal stemmen:</b> {totaalStemmen}
+        </p>
+
+        <a
+          href={csvUrl}
+          style={{
+            marginLeft: "auto",
+            padding: "8px 12px",
+            border: "1px solid #333",
+            borderRadius: 10,
+            background: "white",
+            textDecoration: "none",
+            color: "#111",
+            fontSize: 14,
+          }}
+        >
+          Download CSV (Excel)
+        </a>
+      </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
         <thead>
@@ -90,7 +125,6 @@ export default function UitslagPage() {
               <td style={tdRight}>{r.aantal_2}</td>
               <td style={tdRight}>{r.aantal_1}</td>
 
-              {/* OPENKLAPBAAR */}
               <td style={td}>
                 <details>
                   <summary style={{ cursor: "pointer", userSelect: "none" }}>
