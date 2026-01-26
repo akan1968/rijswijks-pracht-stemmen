@@ -22,7 +22,8 @@ export default function UitslagPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/results${window.location.search}`);
+        // key blijft in de URL: /uitslag?key=...
+        const res = await fetch(`/api/results${window.location.search}`, { cache: "no-store" });
         const json = await res.json();
 
         if (!res.ok || !json.ok) {
@@ -64,31 +65,55 @@ export default function UitslagPage() {
             <th style={th}>#</th>
             <th style={th}>Locatie</th>
             <th style={th}>Artiest</th>
-            <th style={th}>Totaal punten</th>
-            <th style={th}>Stemmen</th>
-            <th style={th}>#3</th>
-            <th style={th}>#2</th>
-            <th style={th}>#1</th>
-            <th style={th}>Toelichting (bundel)</th>
+            <th style={thRight}>Totaal punten</th>
+            <th style={thRight}>Stemmen</th>
+            <th style={thRight}>#3</th>
+            <th style={thRight}>#2</th>
+            <th style={thRight}>#1</th>
+            <th style={th}>Toelichting</th>
           </tr>
         </thead>
 
         <tbody>
           {rows.map((r) => (
-            <tr key={r.positie}>
+            <tr key={`${r.locatie}-${r.artiest}-${r.positie}`}>
               <td style={tdCenter}>{r.positie}</td>
-              <td style={td}>{r.locatie}</td>
+              <td style={td}>
+                <b>{r.locatie}</b>
+              </td>
               <td style={td}>{r.artiest}</td>
-              <td style={tdCenter}><b>{r.punten_totaal}</b></td>
-              <td style={tdCenter}>{r.stemmen_aantal}</td>
-              <td style={tdCenter}>{r.aantal_3}</td>
-              <td style={tdCenter}>{r.aantal_2}</td>
-              <td style={tdCenter}>{r.aantal_1}</td>
-              <td style={tdSmall}>{r.toelichting_bundel || "-"}</td>
+              <td style={tdRight}>
+                <b>{r.punten_totaal}</b>
+              </td>
+              <td style={tdRight}>{r.stemmen_aantal}</td>
+              <td style={tdRight}>{r.aantal_3}</td>
+              <td style={tdRight}>{r.aantal_2}</td>
+              <td style={tdRight}>{r.aantal_1}</td>
+
+              {/* OPENKLAPBAAR */}
+              <td style={td}>
+                <details>
+                  <summary style={{ cursor: "pointer", userSelect: "none" }}>
+                    {r.toelichting_bundel && r.toelichting_bundel.trim() !== ""
+                      ? "Toon toelichtingen"
+                      : "Geen toelichtingen"}
+                  </summary>
+
+                  {r.toelichting_bundel && r.toelichting_bundel.trim() !== "" ? (
+                    <div style={{ marginTop: 8, fontSize: 13, color: "#444", lineHeight: 1.35 }}>
+                      {r.toelichting_bundel}
+                    </div>
+                  ) : null}
+                </details>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      <p style={{ marginTop: 14, color: "#777", fontSize: 13 }}>
+        Tip: bewaar deze link als favoriet inclusief <code>?key=...</code>.
+      </p>
     </main>
   );
 }
@@ -99,9 +124,15 @@ const th: React.CSSProperties = {
   textAlign: "left",
 };
 
+const thRight: React.CSSProperties = {
+  ...th,
+  textAlign: "right",
+};
+
 const td: React.CSSProperties = {
   padding: 8,
   borderBottom: "1px solid #eee",
+  verticalAlign: "top",
 };
 
 const tdCenter: React.CSSProperties = {
@@ -109,8 +140,7 @@ const tdCenter: React.CSSProperties = {
   textAlign: "center",
 };
 
-const tdSmall: React.CSSProperties = {
+const tdRight: React.CSSProperties = {
   ...td,
-  fontSize: 12,
-  color: "#444",
+  textAlign: "right",
 };
